@@ -42,8 +42,8 @@ void initializeServos() {
     servo1.setPeriodHertz(50); 
     servo2.setPeriodHertz(50);
 
-    servo1.attach(SERVO1_PIN, 500, 2400);
-    servo2.attach(SERVO2_PIN, 500, 2400);
+    servo1.attach(SERVO1_PIN);
+    servo2.attach(SERVO2_PIN);
 
     servo1.write(servo1Angle);
     servo2.write(servo2Angle);
@@ -87,9 +87,7 @@ void moveServoToCenter() {
     
     servo1.write(servo1Angle);
     servo2.write(servo2Angle);
-    
-
-    
+ 
     Serial.println("[SERVO] Moved to center position (90°, 90°)");
 }
 

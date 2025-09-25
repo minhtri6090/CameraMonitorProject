@@ -37,7 +37,7 @@
 #define SERVO2_PIN 42
 
 #define LDR_PIN 4              
-#define LED_MOSFET_PIN 5      
+#define LED_PIN 5      
 
 // Cấu hình LDR
 #define LDR_DARK_THRESHOLD 100 

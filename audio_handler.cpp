@@ -84,7 +84,7 @@ void playAudio(int audioIndex) {
         Serial.println("[AUDIO] Invalid audio index");
         return;
     }
-    if (audio->isRunning())audio {
+    if (audio->isRunning()) {
         audio->stopSong();
         delay(100);
     }

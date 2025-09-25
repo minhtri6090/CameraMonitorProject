@@ -30,4 +30,6 @@ void handleScanAP();
 void handleStyleCSS();
 void handleScanResults();
 
+String getErrorPage(String message);
+
 #endif

@@ -149,7 +149,7 @@ void getSensorsStatus() {
         
         Serial.println("[SENSORS] === END STATUS ===");
         
-    } else {c
+    } else {
         Serial.println("[SENSORS] Sensors not ready");
     }
 }

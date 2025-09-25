@@ -45,8 +45,6 @@ void loop() {
         Serial.println("[SYSTEM] Initializing SD Card and Audio...");
         initializeSDCard();
         initializeAudio();
-
-        Serial.println("[AUDIO] SD initialized - Playing welcome message...");
         delay(500);
         playAudio(AUDIO_HELLO);
         
@@ -127,7 +125,7 @@ void loop() {
     }
 
     if (needPlaySuccessAudio && wifiState == WIFI_STA_OK && !isAudioPlaying()) {
-        // Chỉ phát audio WiFi thành công cho web-initiated connection
+        
         Serial.println("[AUDIO] Web-initiated WiFi connection - Playing success audio");
         playAudio(AUDIO_WIFI_SUCCESS);
         delay(100);
@@ -138,7 +136,6 @@ void loop() {
         }
         needPlaySuccessAudio = false;
 
-        // Khởi tạo servo nếu chưa có
         if (!servoInitialized) {
             Serial.println("[SERVO] Web-initiated connection - Initializing servos...");
             initializeServos();
@@ -159,7 +156,7 @@ void loop() {
         
         if (systemReady && wifiState == WIFI_STA_OK) {
             handleMotionLoop();
-            handleLDRLoop();  // Thêm xử lý LDR
+            handleLDRLoop();
             handleBlynkLoop();
         }
     }
