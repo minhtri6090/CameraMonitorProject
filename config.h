@@ -48,6 +48,9 @@
 #define AUDIO_WIFI_FAILED          1  
 #define AUDIO_WIFI_SUCCESS         2  
 #define AUDIO_MOTION_DETECTED      3 
+#define AUDIO_ALARM_LEVEL1         4  // Index của file âm thanh cảnh báo cấp 1
+#define AUDIO_ALARM_LEVEL2         5  // Index của file âm thanh cảnh báo cấp 2
+
 
 #define MAX_CLIENTS 3
 #define APP_CPU 1

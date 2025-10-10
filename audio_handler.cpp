@@ -7,7 +7,9 @@ String audioFiles[] = {
   "/amthanh/xin_chao.mp3",                                  
   "/amthanh/ket_noi_wifi_khong_thanh_cong.mp3",            
   "/amthanh/ket_noi_wifi_thanh_cong.mp3",
-  "/amthanh/phat_hien_chuyen_dong.mp3"                     
+  "/amthanh/phat_hien_chuyen_dong.mp3",
+  "/amthanh/canh_bao_cap_1.mp3",                      
+  "/amthanh/canh_bao_cap_2.mp3"       
 };
 
 Audio *audio = nullptr;

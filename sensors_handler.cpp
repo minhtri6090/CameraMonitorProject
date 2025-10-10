@@ -1,5 +1,6 @@
 #include "sensors_handler.h"
 #include "audio_handler.h"
+#include "security_system.h"
 
 bool systemReady = false;
 bool motionDetected = false;
@@ -99,8 +100,27 @@ void handleMotionLoop() {
                     radarState = HIGH;
                     motionInProgress = true;
 
+                    // Phát âm thanh cảnh báo
                     if (!isAudioPlaying()) {
                         playAudio(AUDIO_MOTION_DETECTED);
+                    }
+                    
+                    // Gửi thông báo phát hiện chuyển động qua MQTT (nếu đã khởi tạo)
+                    if (mqttConnected) {
+                        StaticJsonDocument<200> doc;
+                        doc["event"] = "motion_detected";
+                        doc["timestamp"] = millis();
+                        
+                        char buffer[256];
+                        serializeJson(doc, buffer);
+                        
+                        mqttClient.publish(MQTT_TOPIC_ALERT, buffer);
+                    }
+                    
+                    // Đặt mức cảnh báo ban đầu khi phát hiện chuyển động
+                    if (currentAlertLevel == ALERT_NONE) {
+                        // Cảnh báo cấp độ 1 (sau 10 giây sẽ gửi SMS)
+                        triggerAlert(ALERT_LEVEL1, "Motion detected by PIR sensor");
                     }
                 }
             } else {
@@ -111,6 +131,11 @@ void handleMotionLoop() {
                     if (!isAudioPlaying()) {
                         playAudio(AUDIO_MOTION_DETECTED);
                     }
+                    
+                    // Tăng mức cảnh báo lên cấp độ 2 nếu chuyển động kéo dài
+                    if (currentAlertLevel == ALERT_LEVEL1) {
+                        triggerAlert(ALERT_LEVEL2, "Extended motion detected (>20s)");
+                    }
                 }
             }
         } else {
@@ -118,10 +143,12 @@ void handleMotionLoop() {
                 Serial.println("[MOTION] Motion stopped");
                 radarState = LOW;
                 motionInProgress = false;
+                
+                // Reset alert level sau một thời gian nếu không còn chuyển động
+                // (Không reset ngay để có thể xử lý các SMS đã gửi)
             }
         }
     }
-
 }
 
 void getSensorsStatus() {

@@ -5,6 +5,7 @@
 #include "blynk_handler.h"
 #include "audio_handler.h"
 #include "sensors_handler.h"
+#include "security_system.h"  // Thêm header file mới
 
 bool sdAudioInitialized = false;
 bool welcomeAudioPlayed = false;
@@ -12,6 +13,7 @@ bool wifiConnectionStarted = false;
 bool wifiResultProcessed = false;
 bool pirInitialized = false;
 bool servoInitialized = false;
+bool securitySystemInitialized = false;  // Biến mới để kiểm tra khởi tạo hệ thống bảo mật
 
 bool needPlaySuccessAudio = false;
 unsigned long wifiStartTime = 0;
@@ -122,6 +124,14 @@ void loop() {
         }
         return;
     }
+    
+    // Khởi tạo hệ thống bảo mật sau khi kết nối WiFi và PIR đã sẵn sàng
+    if (pirInitialized && !securitySystemInitialized) {
+        Serial.println("[SECURITY] Initializing security system...");
+        initSecuritySystem();
+        securitySystemInitialized = true;
+        return;
+    }
 
     if (needPlaySuccessAudio && wifiState == WIFI_STA_OK && !isAudioPlaying()) {
         
@@ -157,6 +167,10 @@ void loop() {
             handleMotionLoop();
             handleLDRLoop();
             handleBlynkLoop();
+            
+            if (securitySystemInitialized) {
+                handleSecuritySystem();  // Xử lý hệ thống bảo mật
+            }
         }
     }
 
