@@ -32,9 +32,10 @@ static unsigned long lastLogTime = 0;
 extern bool needPlaySuccessAudio;
 
 void loadCredentials() {
+    //đọc dữu liệu từ EEPROM
     savedSSID = readEEPROM(0, 32);
     savedPassword = readEEPROM(32, 64);
-    
+    //kiểm tra nếu không không có có hoặc sai má dài thì sẽ sóa các kí tự trong EEPROM
     if (savedSSID.length() == 0 || savedSSID.length() > 32 || savedPassword.length() > 64) {
         Serial.println("[WIFI] Invalid credentials, clearing...");
         savedSSID = "";
@@ -44,7 +45,7 @@ void loadCredentials() {
         }
         EEPROM.commit();
     }
-
+    //kiểm tra kí tự có phù hơp trong ASCII
     for (int i = 0; i < savedSSID.length(); i++) {
         if (savedSSID[i] < 32 || savedSSID[i] > 126) {
             Serial.println("[WIFI] Non-printable characters, clearing...");

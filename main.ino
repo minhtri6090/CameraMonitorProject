@@ -77,8 +77,7 @@ void loop() {
             }
             
             wifiResultProcessed = true;
-            
-            // Khởi tạo servo sau khi WiFi thành công
+
             if (!servoInitialized) {
                 Serial.println("[SERVO] Initializing servos after WiFi success...");
                 initializeServos();
@@ -137,13 +136,13 @@ void loop() {
         needPlaySuccessAudio = false;
 
         if (!servoInitialized) {
-            Serial.println("[SERVO] Web-initiated connection - Initializing servos...");
+            Serial.println("[SERVO]  Initializing servos...");
             initializeServos();
             servoInitialized = true;
         }
 
         if (!systemReady) {
-            Serial.println("[SENSORS] Web-initiated connection - Initializing sensors...");
+            Serial.println("[SENSORS] bInitializing sensors...");
             initializeSensors();
             systemReady = true;
         }

@@ -90,7 +90,7 @@ void handleMotionLoop() {
     if (systemReady) {
         radarVal = digitalRead(PIR_PIN);
         
-        if (radarVal == HIGH) {
+        if (radarVal == LOW) {
             if (radarState == LOW) {
                 if (millis() - lastMotionTime > motionCooldown) {
                     Serial.println("[MOTION] LD2410C Motion detected!");

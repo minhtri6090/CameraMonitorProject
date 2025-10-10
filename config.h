@@ -27,14 +27,14 @@
 #define SPI_MISO  13
 #define SPI_SCK   11
 
-#define I2S_DOUT  16 
-#define I2S_BCLK  17
-#define I2S_LRC   18
+#define I2S_DOUT  40 
+#define I2S_BCLK  41
+#define I2S_LRC   42
 
 #define PIR_PIN   38
 
-#define SERVO1_PIN 40
-#define SERVO2_PIN 42
+#define SERVO1_PIN 47
+#define SERVO2_PIN 48
 
 #define LDR_PIN 4              
 #define LED_PIN 5      

@@ -34,6 +34,11 @@ void initializeBuffers() {
     frame_buf = (uint8_t*)heap_caps_malloc(USB_FRAME_BUF_SIZE, MALLOC_CAP_SPIRAM);
     
     if(!mjpeg_buf_a || !mjpeg_buf_b || !payload_buf_a || !payload_buf_b || !frame_buf) {
+        free(mjpeg_buf_a);
+        free(mjpeg_buf_b);
+        free(payload_buf_a);
+        free(payload_buf_b);
+        free(frame_buf);
         while(1) delay(1000);
     }
 }
@@ -120,7 +125,9 @@ void stop_stream_if_needed() {
     if (!streaming_started) return;
     
     if(uvcStarted && uvc != nullptr) {
+        uvc->stop();
         uvcStarted = false; 
+        delay(100);
     }
     
     if (clientProcessorHandle != NULL) {
