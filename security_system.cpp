@@ -35,134 +35,177 @@ void initSecuritySystem() {
 void initSIM() {
     Serial.println("[SIM] Initializing SIM module...");
     
-    // Khởi tạo SIM Serial (dùng UART1 như bạn đã test thành công)
+    // Khởi tạo SIM Serial
     simSerial.begin(115200, SERIAL_8N1, SIM_RX_PIN, SIM_TX_PIN);
     
-    // Cấu hình chân power và bật module
+    // Cấu hình chân POWER
     pinMode(SIM_POWER_PIN, OUTPUT);
     digitalWrite(SIM_POWER_PIN, HIGH);
+    delay(3000); // Chờ module khởi động
     
-    // Chờ module khởi động
-    delay(3000);
+    // Xóa buffer
+    while(simSerial.available()) simSerial.read();
+    
+    Serial.println("[SIM] Bắt đầu kiểm tra module...");
     
     // Kiểm tra kết nối
-    simSerial.println("AT");
-    delay(500);
-    
-    bool moduleOK = false;
-    if (simSerial.available()) {
-        String response = simSerial.readString();
-        if (response.indexOf("OK") >= 0) {
-            Serial.println("[SIM] Module responded OK");
-            moduleOK = true;
-        } else {
-            Serial.println("[SIM] Module not responding correctly");
-            Serial.println("[SIM] Response: " + response);
-        }
-    } else {
-        Serial.println("[SIM] No response from SIM module");
-    }
-    
-    // Cấu hình SMS mode
-    if (moduleOK) {
-        // Set SMS text mode
-        simSerial.println("AT+CMGF=1");
-        delay(500);
+    if (sendCommand("AT", "OK", 2000)) {
+        Serial.println("[SIM] Kết nối với module thành công");
         
-        // Set character set
-        simSerial.println("AT+CSCS=\"GSM\"");
-        delay(500);
+        // Kiểm tra trạng thái SIM
+        sendCommand("AT+CPIN?", "+CPIN: READY", 2000);
         
-        if (simSerial.available()) {
-            String response = simSerial.readString();
-            Serial.println("[SIM] Setup response: " + response);
-        }
+        // Lấy thông tin module
+        sendCommand("ATI", "OK", 2000);
+        
+        // Kiểm tra cường độ tín hiệu
+        sendCommand("AT+CSQ", "OK", 2000);
+        
+        // Kiểm tra trạng thái mạng
+        sendCommand("AT+CPSI?", "OK", 2000);
+        
+        // Cài đặt chế độ SMS text
+        sendCommand("AT+CMGF=1", "OK", 2000);
+        
+        // Cài đặt bảng mã
+        sendCommand("AT+CSCS=\"GSM\"", "OK", 2000);
         
         // Gửi tin nhắn test
+        Serial.println("[SIM] Gửi tin nhắn SMS test...");
         if (sendSMS(PHONE_NUMBER_OWNER, "He thong camera bao dong da khoi dong")) {
             Serial.println("[SIM] Test SMS sent successfully");
         } else {
             Serial.println("[SIM] Test SMS failed");
         }
+    } else {
+        Serial.println("[SIM] Không thể kết nối với module!");
     }
     
     Serial.println("[SIM] SIM module initialized");
 }
 
-bool sendSMS(const char* phoneNumber, const char* message) {
-    Serial.printf("[SIM] Sending SMS to %s: %s\n", phoneNumber, message);
+bool sendCommand(const char* command, const char* expectedResponse, unsigned long timeout) {
+    Serial.print(">> ");
+    Serial.println(command);
     
-    // Xóa buffer
-    while (simSerial.available()) {
-        simSerial.read();
-    }
+    simSerial.println(command);
     
-    // Đặt chế độ text
-    simSerial.println("AT+CMGF=1");
-    delay(500);
-    
-    // Đặt số điện thoại người nhận
-    String cmd = "AT+CMGS=\"";
-    cmd += phoneNumber;
-    cmd += "\"";
-    simSerial.println(cmd);
-    
-    // Đợi dấu nhắc ">"
-    bool gotPrompt = false;
     unsigned long startTime = millis();
     String response = "";
     
-    while (millis() - startTime < 5000) {
+    // Đọc phản hồi trong khoảng thời gian timeout
+    while (millis() - startTime < timeout) {
         if (simSerial.available()) {
             char c = simSerial.read();
             response += c;
+            Serial.write(c);
+            
+            // Nếu tìm thấy phản hồi mong đợi
+            if (response.indexOf(expectedResponse) >= 0) {
+                return true;
+            }
+        }
+    }
+    
+    return false;
+}
+
+bool sendSMS(const char* phoneNumber, const char* message) {
+    // Gửi lệnh AT+CMGS
+    Serial.print(">> AT+CMGS=\"");
+    Serial.print(phoneNumber);
+    Serial.println("\"");
+    
+    simSerial.print("AT+CMGS=\"");
+    simSerial.print(phoneNumber);
+    simSerial.println("\"");
+    
+    delay(500);
+    
+    // Chờ dấu nhắc ">"
+    unsigned long startTime = millis();
+    bool gotPrompt = false;
+    
+    while (millis() - startTime < 5000 && !gotPrompt) {
+        if (simSerial.available()) {
+            char c = simSerial.read();
+            Serial.write(c);
+            
             if (c == '>') {
                 gotPrompt = true;
                 break;
             }
         }
-        delay(10);
     }
     
     if (!gotPrompt) {
-        Serial.println("[SIM] No prompt received for SMS");
+        Serial.println("❌ Không nhận được dấu nhắc '>'");
         return false;
     }
     
     // Gửi nội dung tin nhắn
+    Serial.print(">> ");
+    Serial.println(message);
+    
     simSerial.print(message);
     delay(500);
     
-    // Kết thúc tin nhắn với Ctrl+Z
+    // Gửi Ctrl+Z để kết thúc tin nhắn
     simSerial.write(26);
-    delay(5000);  // Chờ gửi xong
     
-    // Kiểm tra phản hồi
-    response = "";
+    // Đọc phản hồi
     startTime = millis();
+    String response = "";
+    bool success = false;
     
-    while (millis() - startTime < 10000) {  // Timeout 10 giây
+    while (millis() - startTime < 20000) {
         if (simSerial.available()) {
-            while (simSerial.available()) {
-                char c = simSerial.read();
-                response += c;
+            char c = simSerial.read();
+            response += c;
+            Serial.write(c);
+            
+            // Kiểm tra phản hồi thành công
+            if (response.indexOf("+CMGS:") >= 0 && response.indexOf("OK") >= 0) {
+                success = true;
+                break;
+            }
+            
+            // Kiểm tra lỗi
+            if (response.indexOf("ERROR") >= 0) {
+                break;
             }
         }
-        
-        if (response.indexOf("+CMGS:") >= 0) {
-            Serial.println("[SIM] SMS sent successfully");
-            return true;
-        } else if (response.indexOf("ERROR") >= 0) {
-            Serial.println("[SIM] Failed to send SMS");
-            Serial.println("[SIM] Error response: " + response);
-            return false;
-        }
-        
-        delay(100);
     }
     
-    Serial.println("[SIM] SMS send timeout");
-    return false;
+    return success;
+}
+
+void checkSimStatus() {
+    Serial.println("[SIM] === SIM Status Check ===");
+    sendCommand("AT+CPIN?", "OK", 2000);
+    sendCommand("AT+CSQ", "OK", 2000);  // Signal quality
+    sendCommand("AT+CREG?", "OK", 2000); // Registration status
+    sendCommand("AT+CPSI?", "OK", 2000); // Network information
+    Serial.println("[SIM] === End Status Check ===");
+}
+
+void checkNetworkStatus() {
+    Serial.println("[SIM] Checking network status...");
+    
+    // Kiểm tra trạng thái SIM
+    sendCommand("AT+CPIN?", "OK", 2000);
+    
+    // Kiểm tra cường độ tín hiệu
+    sendCommand("AT+CSQ", "OK", 2000);
+    
+    // Kiểm tra trạng thái mạng
+    sendCommand("AT+CPSI?", "OK", 2000);
+    
+    // Kiểm tra đăng ký mạng
+    sendCommand("AT+CREG?", "OK", 2000);
+    
+    // Kiểm tra nhà mạng
+    sendCommand("AT+COPS?", "OK", 2000);
 }
 
 void initMQTT() {
@@ -264,7 +307,7 @@ void handleSecuritySystem() {
                 smsSent = true;
                 
                 // Phát âm thanh cảnh báo
-                playAudio(AUDIO_INTRUDER_ALERT);
+                playAudio(AUDIO_ALARM_LEVEL1);
             }
         } 
         else if (currentAlertLevel == ALERT_LEVEL2) {
@@ -280,7 +323,7 @@ void handleSecuritySystem() {
                 neighborSmsSent = true;
                 
                 // Phát âm thanh cảnh báo
-                playAudio(AUDIO_INTRUDER_ALERT);
+                playAudio(AUDIO_ALARM_LEVEL2);
                 
                 // Thông báo trạng thái qua MQTT
                 publishMQTTStatus("Alert level 2: Alarm activated!");
@@ -303,10 +346,15 @@ void triggerAlert(AlertLevel level, const char* message) {
     
     // Xử lý theo từng cấp độ cảnh báo
     switch (level) {
-        case ALERT_FAMILIAR: // Vì ALERT_FAMILIAR và ALERT_NONE có cùng giá trị 0, nên chỉ cần giữ 1 case
+        case ALERT_FAMILIAR:
             Serial.println("[SECURITY] Familiar person detected");
             // Chỉ phát âm thanh cảnh báo, không làm gì thêm
-            playAudio(AUDIO_INTRUDER_ALERT);
+            playAudio(AUDIO_MOTION_DETECTED);
+            break;
+            
+        case ALERT_NONE:
+            Serial.println("[SECURITY] Alert cleared");
+            stopAlarm();
             break;
             
         case ALERT_LEVEL1:
@@ -358,4 +406,3 @@ void stopAlarm() {
     // Thông báo trạng thái
     publishMQTTStatus("Alarm stopped");
 }
-

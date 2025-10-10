@@ -6,7 +6,6 @@
 #include <ArduinoJson.h>
 
 // Cấu hình Module SIM và MQTT
-// Cấu hình Module SIM và MQTT
 #define SIM_TX_PIN          7     // ESP TX kết nối với RX của module SIM
 #define SIM_RX_PIN          15    // ESP RX kết nối với TX của module SIM
 #define SIM_POWER_PIN       6     // PEN của module SIM
@@ -32,7 +31,7 @@
 #define ALARM_DURATION      30000    // 30 giây cho thời gian còi hú
 
 // Audio indexes cho hệ thống bảo mật
-#define AUDIO_INTRUDER_ALERT  3       // "Có người xâm nhập"
+#define AUDIO_INTRUDER_ALERT  4       // "Có người xâm nhập"
 
 // Trạng thái cảnh báo
 enum AlertLevel {
@@ -61,11 +60,13 @@ void publishMQTTStatus(const char* message);
 
 // Xử lý cảnh báo
 void handleSecuritySystem();
-void setAlertLevel(AlertLevel level, const char* message);
 void triggerAlert(AlertLevel level, const char* message);
 void stopAlarm();
 
-// Gửi SMS
+// Hàm tiện ích cho module SIM
+bool sendCommand(const char* command, const char* expectedResponse, unsigned long timeout);
 bool sendSMS(const char* phoneNumber, const char* message);
+void checkSimStatus();
+void checkNetworkStatus();
 
 #endif

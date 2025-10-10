@@ -10,6 +10,6 @@ void handleServoLoop();
 void updateServoPositions();
 void moveServoToCenter();
 
-
+void checkNetworkStatus();
 
 #endif
