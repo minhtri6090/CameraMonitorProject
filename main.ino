@@ -44,7 +44,6 @@ void loop() {
     handleAudioLoop();
 
     if (!sdAudioInitialized) {
-        Serial.println("[SYSTEM] Initializing SD Card and Audio...");
         initializeSDCard();
         initializeAudio();
         delay(500);
@@ -56,9 +55,6 @@ void loop() {
     }
 
     if (welcomeAudioPlayed && !wifiConnectionStarted && !isAudioPlaying()) {
-        Serial.println("[WIFI] Starting WiFi connection...");
-        delay(1000);
-        
         initializeWiFi();
         wifiConnectionStarted = true;
         wifiStartTime = millis();
@@ -69,7 +65,6 @@ void loop() {
         handleWiFiLoop();
 
         if (wifiState == WIFI_STA_OK && !isAudioPlaying()) {
-            Serial.println("[AUDIO] WiFi connected - Playing success audio");
             playAudio(AUDIO_WIFI_SUCCESS);
             delay(100);
             while (isAudioPlaying()) { 
@@ -81,7 +76,6 @@ void loop() {
             wifiResultProcessed = true;
 
             if (!servoInitialized) {
-                Serial.println("[SERVO] Initializing servos after WiFi success...");
                 initializeServos();
                 servoInitialized = true;
             }
@@ -89,8 +83,6 @@ void loop() {
         }
 
         if ((millis() - wifiStartTime > WIFI_TIMEOUT) && wifiState != WIFI_STA_OK && !isAudioPlaying()) {
-            Serial.println("[AUDIO] Initial WiFi FAILED - Playing failure audio...");
-            
             playAudio(AUDIO_WIFI_FAILED);
             delay(100);
             while (isAudioPlaying()) { 
@@ -107,35 +99,21 @@ void loop() {
 
     if (wifiResultProcessed && !pirInitialized) {
         if (wifiState == WIFI_STA_OK) {
-            Serial.println("[SENSORS] Initializing sensors (PIR + LDR)...");
             initializeSensors();
             systemReady = true; 
-        } else {
-            Serial.println("[SENSORS] WiFi failed - Sensors disabled");
         }
         
         pirInitialized = true;
-        
-        Serial.println("=== SYSTEM READY ===");
-        if (wifiState == WIFI_AP_MODE) {
-            Serial.printf("AP Config: http://%s/\n", WiFi.softAPIP().toString().c_str());
-        } else {
-            Serial.printf("Camera: http://%s/\n", WiFi.localIP().toString().c_str());
-        }
         return;
     }
     
-    // Khởi tạo hệ thống bảo mật sau khi kết nối WiFi và PIR đã sẵn sàng
     if (pirInitialized && !securitySystemInitialized) {
-        Serial.println("[SECURITY] Initializing security system...");
         initSecuritySystem();
         securitySystemInitialized = true;
         return;
     }
 
     if (needPlaySuccessAudio && wifiState == WIFI_STA_OK && !isAudioPlaying()) {
-        
-        Serial.println("[AUDIO] Web-initiated WiFi connection - Playing success audio");
         playAudio(AUDIO_WIFI_SUCCESS);
         delay(100);
         while (isAudioPlaying()) { 
@@ -146,13 +124,11 @@ void loop() {
         needPlaySuccessAudio = false;
 
         if (!servoInitialized) {
-            Serial.println("[SERVO]  Initializing servos...");
             initializeServos();
             servoInitialized = true;
         }
 
         if (!systemReady) {
-            Serial.println("[SENSORS] bInitializing sensors...");
             initializeSensors();
             systemReady = true;
         }
@@ -169,16 +145,43 @@ void loop() {
             handleBlynkLoop();
             
             if (securitySystemInitialized) {
-                handleSecuritySystem();  // Xử lý hệ thống bảo mật
+                handleSecuritySystem();
             }
         }
     }
 
-    if (systemReady) {
-        static unsigned long lastSensorDebug = 0;
-        if (millis() - lastSensorDebug > 10000) {
-            lastSensorDebug = millis();
-            getSensorsStatus();
+    // TẮT sensor debug - chỉ giữ Serial commands
+    if (Serial.available()) {
+        String command = Serial.readStringUntil('\n');
+        command.trim();
+        
+        if (command == "mqtt_status") {
+            Serial.println("=== MQTT STATUS ===");
+            Serial.printf("Connected: %s\n", mqttConnected ? "YES" : "NO");
+            Serial.printf("Client state: %d\n", mqttClient.state());
+            Serial.printf("WiFi status: %d\n", WiFi.status());
+            Serial.printf("IP: %s\n", WiFi.localIP().toString().c_str());
+            Serial.println("==================");
+        }
+        else if (command == "mqtt_test") {
+            String testMessage = "Manual test from ESP32 - " + String(millis());
+            publishMQTTStatus(testMessage.c_str());
+        }
+        else if (command == "family_test") {
+            onFamilyMemberDetected();
+        }
+        else if (command == "test_callback") {
+            String testMessage = "{\"event\":\"family_member_detected\",\"user_name\":\"TestUser\",\"confidence\":0.95}";
+            mqttCallback((char*)MQTT_TOPIC_FAMILY_DETECT, 
+                         (byte*)testMessage.c_str(), 
+                         testMessage.length());
+        }
+        else if (command == "help") {
+            Serial.println("Available commands:");
+            Serial.println("  mqtt_status - Show MQTT status");
+            Serial.println("  mqtt_test - Test MQTT publish");
+            Serial.println("  family_test - Simulate family detection");
+            Serial.println("  test_callback - Test MQTT callback directly");
         }
     }
     

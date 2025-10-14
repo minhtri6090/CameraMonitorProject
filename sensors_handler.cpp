@@ -5,7 +5,7 @@
 bool systemReady = false;
 bool motionDetected = false;
 unsigned long lastMotionTime = 0;
-const unsigned long motionCooldown = 20000;
+const unsigned long motionCooldown = 5000; // Giảm xuống 5s để phản hồi nhanh hơn
 
 int radarState = LOW; 
 int radarVal = 0; 
@@ -73,10 +73,13 @@ void readLDRSensor() {
 }
 
 void controlLED(bool turnOn) {
-    if (turnOn != ledState) {
-        ledState = turnOn;
-        digitalWrite(LED_PIN, ledState ? HIGH : LOW);
-        Serial.printf("[LED] LED %s \n", ledState ? "ON" : "OFF");
+    // Chỉ điều khiển LED nếu không có báo động đang hoạt động
+    if (currentSecurityState != SECURITY_ALARM_ACTIVE) {
+        if (turnOn != ledState) {
+            ledState = turnOn;
+            digitalWrite(LED_PIN, ledState ? HIGH : LOW);
+            Serial.printf("[LED] LED %s \n", ledState ? "ON" : "OFF");
+        }
     }
 }
 
@@ -91,7 +94,7 @@ void handleMotionLoop() {
     if (systemReady) {
         radarVal = digitalRead(PIR_PIN);
         
-        if (radarVal == LOW) {
+        if (radarVal == HIGH) {
             if (radarState == LOW) {
                 if (millis() - lastMotionTime > motionCooldown) {
                     Serial.println("[MOTION] LD2410C Motion detected!");
@@ -100,52 +103,13 @@ void handleMotionLoop() {
                     radarState = HIGH;
                     motionInProgress = true;
 
-                    // Phát âm thanh cảnh báo
-                    if (!isAudioPlaying()) {
-                        playAudio(AUDIO_MOTION_DETECTED);
-                    }
-                    
-                    // Gửi thông báo phát hiện chuyển động qua MQTT (nếu đã khởi tạo)
-                    if (mqttConnected) {
-                        StaticJsonDocument<200> doc;
-                        doc["event"] = "motion_detected";
-                        doc["timestamp"] = millis();
-                        
-                        char buffer[256];
-                        serializeJson(doc, buffer);
-                        
-                        mqttClient.publish(MQTT_TOPIC_ALERT, buffer);
-                    }
-                    
-                    // Đặt mức cảnh báo ban đầu khi phát hiện chuyển động
-                    if (currentAlertLevel == ALERT_NONE) {
-                        // Cảnh báo cấp độ 1 (sau 10 giây sẽ gửi SMS)
-                        triggerAlert(ALERT_LEVEL1, "Motion detected by PIR sensor");
-                    }
-                }
-            } else {
-                if (motionInProgress && (millis() - motionStartTime > motionCooldown)) {
-                    Serial.println("[MOTION] Motion continues > 20s, playing audio again");
-                    motionStartTime = millis();
-                    
-                    if (!isAudioPlaying()) {
-                        playAudio(AUDIO_MOTION_DETECTED);
-                    }
-                    
-                    // Tăng mức cảnh báo lên cấp độ 2 nếu chuyển động kéo dài
-                    if (currentAlertLevel == ALERT_LEVEL1) {
-                        triggerAlert(ALERT_LEVEL2, "Extended motion detected (>20s)");
-                    }
+                    onMotionDetected();
                 }
             }
         } else {
             if (radarState == HIGH) {
-                Serial.println("[MOTION] Motion stopped");
                 radarState = LOW;
                 motionInProgress = false;
-                
-                // Reset alert level sau một thời gian nếu không còn chuyển động
-                // (Không reset ngay để có thể xử lý các SMS đã gửi)
             }
         }
     }
@@ -173,6 +137,16 @@ void getSensorsStatus() {
         Serial.printf("[LDR] Thresholds - Dark: <%d, Bright: >%d\n", 
                      LDR_DARK_THRESHOLD, LDR_BRIGHT_THRESHOLD);
         Serial.printf("[LDR] Last read: %lu ms ago\n", millis() - lastLDRRead);
+        
+        // Thêm thông tin security state
+        Serial.printf("[SECURITY] Current state: %d\n", currentSecurityState);
+        if (currentSecurityState != SECURITY_IDLE) {
+            unsigned long elapsedTime = millis() - motionDetectedTime;
+            Serial.printf("[SECURITY] Time since motion: %lu ms\n", elapsedTime);
+            Serial.printf("[SECURITY] Owner SMS sent: %s, Neighbor SMS sent: %s\n", 
+                         ownerSmsAlreadySent ? "YES" : "NO", 
+                         neighborSmsAlreadySent ? "YES" : "NO");
+        }
         
         Serial.println("[SENSORS] === END STATUS ===");
         
