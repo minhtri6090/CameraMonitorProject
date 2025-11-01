@@ -22,23 +22,15 @@ const int SERVO_STEP = 4;
 const int SERVO_SPEED_MS = 60;
 
 BlynkTimer servoTimer;
-unsigned long lastServoUpdate = 0;
 
 void initializeBlynk() {
     if(savedSSID.length() > 0 && savedPassword.length() > 0) {
         Blynk.begin(BLYNK_AUTH_TOKEN, savedSSID.c_str(), savedPassword.c_str());
-        Serial.println("[BLYNK] Đã khởi tạo Blynk connection");
-
         servoTimer.setInterval(SERVO_SPEED_MS, updateServoPositions);
-        
-    } else {
-        Serial.println("[BLYNK] Không có WiFi credentials, bỏ qua Blynk");
     }
 }
 
 void initializeServos() {
-    Serial.println("[SERVO] Initializing servos...");
-
     servo1.setPeriodHertz(50); 
     servo2.setPeriodHertz(50);
 
@@ -49,8 +41,6 @@ void initializeServos() {
     servo2.write(servo2Angle);
     
     delay(500);
-    
-    Serial.printf("[SERVO] Servos initialized - Pan: %d°, Tilt: %d°\n", servo1Angle, servo2Angle);
 }
 
 void updateServoPositions() {
@@ -76,8 +66,7 @@ void updateServoPositions() {
 
     if (moved) {
         servo1.write(servo1Angle);
-        servo2.write(servo2Angle);    
-        Serial.printf("[SERVO] Pan: %d°, Tilt: %d°\n", servo1Angle, servo2Angle);
+        servo2.write(servo2Angle);
     }
 }
 
@@ -87,8 +76,6 @@ void moveServoToCenter() {
     
     servo1.write(servo1Angle);
     servo2.write(servo2Angle);
- 
-    Serial.println("[SERVO] Moved to center position (90°, 90°)");
 }
 
 void handleServoLoop() {
@@ -106,27 +93,22 @@ void handleBlynkLoop() {
 
 BLYNK_WRITE(V_SERVO1_LEFT) {
     holdServo1Left = (param.asInt() == 1);
-    Serial.printf("[BLYNK] Servo1 Left: %s\n", holdServo1Left ? "PRESSED" : "RELEASED");
 }
 
 BLYNK_WRITE(V_SERVO1_RIGHT) {
     holdServo1Right = (param.asInt() == 1);
-    Serial.printf("[BLYNK] Servo1 Right: %s\n", holdServo1Right ? "PRESSED" : "RELEASED");
 }
 
 BLYNK_WRITE(V_SERVO2_DOWN) {
     holdServo2Down = (param.asInt() == 1);
-    Serial.printf("[BLYNK] Servo2 Down: %s\n", holdServo2Down ? "PRESSED" : "RELEASED");
 }
 
 BLYNK_WRITE(V_SERVO2_UP) {
     holdServo2Up = (param.asInt() == 1);
-    Serial.printf("[BLYNK] Servo2 Up: %s\n", holdServo2Up ? "PRESSED" : "RELEASED");
 }
 
 BLYNK_WRITE(V_SERVO_CENTER) {
     if (param.asInt() == 1) { 
         moveServoToCenter();
-        Serial.println("[BLYNK] Center button pressed");
     }
 }

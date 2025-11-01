@@ -3,7 +3,6 @@
 
 #include "config.h"
 
-// PIR/Motion sensor variables
 extern bool systemReady;
 extern bool motionDetected;
 extern unsigned long lastMotionTime;
@@ -13,15 +12,12 @@ extern int radarVal;
 extern unsigned long motionStartTime;
 extern bool motionInProgress;
 
-// LDR sensor variables
 extern int ldrValue;
 extern bool isDark;
 extern bool ledState;
 extern unsigned long lastLDRRead;
 
-// Functions
 void initializeSensors(); 
-void getSensorsStatus(); 
 void handleMotionLoop();
 void handleLDRLoop();
 void readLDRSensor();

@@ -40,7 +40,7 @@
 #define LED_PIN 5      
 
 // Cấu hình LDR
-#define LDR_DARK_THRESHOLD 100 
+#define LDR_DARK_THRESHOLD 200 
 #define LDR_BRIGHT_THRESHOLD 700 
 #define LDR_READ_INTERVAL 1000  
 
