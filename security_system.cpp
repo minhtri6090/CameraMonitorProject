@@ -1,10 +1,11 @@
 #include "security_system.h"
 #include "wifi_manager.h"
 #include "audio_handler.h"
+#include "sensors_handler.h"
 
-// Biến trạng thái
 SecurityState currentSecurityState = SECURITY_IDLE;
 unsigned long motionDetectedTime = 0;
+unsigned long lastMotionSeenTime = 0;
 bool ownerSmsAlreadySent = false;
 bool neighborSmsAlreadySent = false; 
 bool familyMemberDetected = false;
@@ -13,6 +14,8 @@ bool mqttConnected = false;
 HardwareSerial simSerial(1);
 WiFiClient espClient;
 PubSubClient mqttClient(espClient);
+
+static TaskHandle_t smsTaskHandle = NULL;
 
 void initSecuritySystem() {
     resetSecurityState();
@@ -28,7 +31,7 @@ void initSIM() {
     
     pinMode(SIM_POWER_PIN, OUTPUT);
     digitalWrite(SIM_POWER_PIN, HIGH);
-    delay(3000);
+    vTaskDelay(pdMS_TO_TICKS(1000));
     
     while(simSerial.available()) simSerial.read();
     
@@ -36,6 +39,9 @@ void initSIM() {
         sendCommand("AT+CPIN?", "+CPIN: READY", 2000);
         sendCommand("AT+CMGF=1", "OK", 2000);
         sendCommand("AT+CSCS=\"GSM\"", "OK", 2000);
+        Serial.println("[SIM] Initialized");
+    } else {
+        Serial.println("[SIM] Init failed");
     }
 }
 
@@ -60,11 +66,13 @@ bool sendCommand(const char* command, const char* expectedResponse, unsigned lon
 }
 
 bool sendSMS(const char* phoneNumber, const char* message) {
+    Serial.printf("[SMS] Sending to %s\n", phoneNumber);
+    
     simSerial.print("AT+CMGS=\"");
     simSerial.print(phoneNumber);
     simSerial.println("\"");
     
-    delay(500);
+    vTaskDelay(pdMS_TO_TICKS(500));
     
     unsigned long startTime = millis();
     bool gotPrompt = false;
@@ -80,11 +88,12 @@ bool sendSMS(const char* phoneNumber, const char* message) {
     }
     
     if (!gotPrompt) {
+        Serial.println("[SMS] No prompt");
         return false;
     }
     
     simSerial.print(message);
-    delay(500);
+    vTaskDelay(pdMS_TO_TICKS(500));
     simSerial.write(26);
     
     startTime = millis();
@@ -107,39 +116,98 @@ bool sendSMS(const char* phoneNumber, const char* message) {
         }
     }
     
+    Serial.printf("[SMS] %s\n", success ? "OK" : "FAILED");
     return success;
 }
 
-void initMQTT() {
+void sendSMSTask(void* parameter) {
+    SMSData* data = (SMSData*)parameter;
+    
+    Serial.printf("[SMS_TASK] Started on Core %d\n", xPortGetCoreID());
+    unsigned long startTime = millis();
+    
+    bool result = sendSMS(data->phoneNumber, data->message);
+    
+    Serial.printf("[SMS_TASK] Completed in %lu ms (Result: %s)\n", 
+                  millis() - startTime, result ? "SUCCESS" : "FAILED");
+    
+    delete data;
+    smsTaskHandle = NULL;
+    vTaskDelete(NULL);
+}
+
+void sendSMSAsync(const char* phone, const char* msg) {
+    if (smsTaskHandle != NULL) {
+        Serial.println("[SMS] Warning: Previous SMS task still running, skipping");
+        return;
+    }
+    
+    SMSData* data = new SMSData;
+    strncpy(data->phoneNumber, phone, sizeof(data->phoneNumber) - 1);
+    strncpy(data->message, msg, sizeof(data->message) - 1);
+    data->phoneNumber[sizeof(data->phoneNumber) - 1] = '\0';
+    data->message[sizeof(data->message) - 1] = '\0';
+    
+    BaseType_t result = xTaskCreatePinnedToCore(
+        sendSMSTask,
+        "SMSTask",
+        4096,
+        data,
+        1,
+        &smsTaskHandle,
+        0
+    );
+    
+    if (result != pdPASS) {
+        Serial.println("[SMS] Failed to create SMS task");
+        delete data;
+    } else {
+        Serial.println("[SMS] SMS task created (async)");
+    }
+}
+
+void initMQTT() 
+{
     mqttClient.setServer(MQTT_SERVER, MQTT_PORT);
     mqttClient.setCallback(mqttCallback);
     connectMQTT();
 }
 
-void connectMQTT() {
+void connectMQTT() 
+{
     if (mqttConnected || wifiState != WIFI_STA_OK) return;
     
-    if (mqttClient.connect(MQTT_CLIENT_ID, MQTT_USER, MQTT_PASSWORD)) {
+    Serial.print("[MQTT] Connecting...");
+    
+    if (mqttClient.connect(MQTT_CLIENT_ID, MQTT_USER, MQTT_PASSWORD)) 
+    {
         mqttConnected = true;
         
         mqttClient.subscribe(MQTT_TOPIC_COMMAND);
         mqttClient.subscribe(MQTT_TOPIC_FAMILY_DETECT);
         
-        publishMQTTStatus("ESP32S3 camera online");
-        
-    } else {
+        publishMQTTStatus("ESP32S3 online");
+        Serial.println(" OK");
+    } 
+    else 
+    {
         mqttConnected = false;
+        Serial.printf(" FAIL RC=%d\n", mqttClient.state());
     }
 }
 
-void mqttCallback(char* topic, byte* payload, unsigned int length) {
+void mqttCallback(char* topic, byte* payload, unsigned int length) 
+{
     if (length == 0) return;
     
     char message[length + 1];
-    for (unsigned int i = 0; i < length; i++) {
+    for (unsigned int i = 0; i < length; i++) 
+    {
         message[i] = (char)payload[i];
     }
     message[length] = '\0';
+    
+    Serial.printf("\n[MQTT] <- %s: %s\n", topic, message);
     
     if (strcmp(topic, MQTT_TOPIC_FAMILY_DETECT) == 0) {
         StaticJsonDocument<300> doc;
@@ -148,27 +216,9 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
         if (!error) {
             const char* user_name = doc["user_name"] | "Unknown";
             float confidence = doc["confidence"] | 0.0;
-            const char* user_id = doc["user_id"] | "unknown";
-            const char* event = doc["event"];
             
-            bool is_family_detection = true;
-            if (event != nullptr) {
-                is_family_detection = (strcmp(event, "family_member_detected") == 0);
-            }
-            
-            if (is_family_detection) {
-                onFamilyMemberDetected();
-                
-                char confirmBuffer[256];
-                StaticJsonDocument<200> confirmDoc;
-                confirmDoc["status"] = "family_confirmed";
-                confirmDoc["user_name"] = user_name;
-                confirmDoc["timestamp"] = millis();
-                serializeJson(confirmDoc, confirmBuffer);
-                mqttClient.publish(MQTT_TOPIC_STATUS, confirmBuffer);
-                
-                return;
-            }
+            Serial.printf("[SECURITY] Family: %s (%.2f)\n", user_name, confidence);
+            onFamilyMemberDetected();
         }
     }
 }
@@ -188,94 +238,181 @@ void publishMQTTStatus(const char* message) {
     mqttClient.publish(MQTT_TOPIC_STATUS, buffer);
 }
 
-void handleSecuritySystem() {
-    static unsigned long lastMqttDebug = 0;
-    if (millis() - lastMqttDebug > 30000) {
-        lastMqttDebug = millis();
-        Serial.printf("[MQTT] Connected: %s\n", mqttConnected ? "YES" : "NO");
+void sendNodeCommand(const char* device, const char* action) 
+{
+    if (!mqttConnected) 
+    {
+        Serial.println("[MQTT] Not connected");
+        return;
     }
     
-    if (!mqttConnected && wifiState == WIFI_STA_OK) {
-        connectMQTT();
+    StaticJsonDocument<128> doc;
+    doc["action"] = action;
+    doc["timestamp"] = millis();
+    
+    char buffer[192];
+    serializeJson(doc, buffer);
+    
+    String topic = "security/node/";
+    topic += device;
+    
+    bool ok = mqttClient.publish(topic.c_str(), buffer, false);
+    
+    Serial.printf("[MQTT] -> %s: %s (%s)\n", device, action, ok ? "OK" : "FAIL");
+}
+
+void handleSecuritySystem() 
+{
+    static unsigned long lastMQTTReconnectAttempt = 0;
+    const unsigned long MQTT_RECONNECT_INTERVAL = 5000;
+    
+    if (!mqttConnected && wifiState == WIFI_STA_OK) 
+    {
+        unsigned long now = millis();
+        
+        if (now - lastMQTTReconnectAttempt > MQTT_RECONNECT_INTERVAL) 
+        {
+            lastMQTTReconnectAttempt = now;
+            Serial.println("[MQTT] Attempting reconnect...");
+            connectMQTT();
+        }
     }
     
-    if (mqttConnected) {
-        mqttClient.loop();
+    if (mqttConnected) 
+    {
+        if (!mqttClient.connected()) 
+        {
+            Serial.println("[MQTT] Lost connection");
+            mqttConnected = false;
+        } 
+        else 
+        {
+            mqttClient.loop();
+        }
     }
     
     checkSecurityTimers();
 }
 
 void onMotionDetected() {
-    Serial.println("[SECURITY] Motion detected - Starting security sequence");
+    lastMotionSeenTime = millis();
     
-    if (!isAudioPlaying()) {
+    if (currentSecurityState == SECURITY_IDLE) {
+        Serial.println("\n[SECURITY] Motion detected - Starting countdown");
+        
+        if (isAudioPlaying()) {
+            stopAudio();
+            vTaskDelay(pdMS_TO_TICKS(100));
+        }
+        
         playAudio(AUDIO_MOTION_DETECTED);
-    }
-    
-    currentSecurityState = SECURITY_MOTION_DETECTED;
-    motionDetectedTime = millis();
-    ownerSmsAlreadySent = false;
-    neighborSmsAlreadySent = false;
-    familyMemberDetected = false;
-    
-    currentSecurityState = SECURITY_WAITING_OWNER_SMS;
-    
-    if (mqttConnected) {
-        StaticJsonDocument<200> doc;
-        doc["event"] = "motion_detected";
-        doc["timestamp"] = millis();
-        doc["security_state"] = currentSecurityState;
         
-        char buffer[256];
-        serializeJson(doc, buffer);
+        currentSecurityState = SECURITY_WAITING_OWNER_SMS;
+        motionDetectedTime = millis();
+        ownerSmsAlreadySent = false;
+        neighborSmsAlreadySent = false;
+        familyMemberDetected = false;
         
-        mqttClient.publish(MQTT_TOPIC_ALERT, buffer);
+        if (mqttConnected) {
+            StaticJsonDocument<256> doc;
+            doc["event"] = "motion_detected";
+            doc["timestamp"] = millis();
+            doc["security_state"] = currentSecurityState;
+            
+            char buffer[300];
+            serializeJson(doc, buffer);
+            
+            mqttClient.publish(MQTT_TOPIC_ALERT, buffer, true);
+        }
+        
+        publishMQTTStatus("Motion detected");
     }
+}
+
+void updateMotionTimestamp() {
+    lastMotionSeenTime = millis();
+}
+
+// ✅ HÀM MỚI: Xử lý khi motion kết thúc
+void onMotionEnded() {
+    Serial.println("[SECURITY] Motion ended - Turning OFF buzzer");
     
-    publishMQTTStatus("Motion detected - waiting for family confirmation");
+    // ✅ Tắt buzzer ngay lập tức
+    sendNodeCommand("buzzer", "off");
+    
+    // ✅ Nếu đang trong countdown → Reset về IDLE
+    if (currentSecurityState != SECURITY_IDLE && currentSecurityState != SECURITY_ALARM_ACTIVE) {
+        Serial.println("[SECURITY] Resetting to IDLE (motion stopped before alarm)");
+        resetSecurityState();
+    }
+    // ✅ Nếu đã ở ALARM_ACTIVE (sau 40s) → Giữ trạng thái lock
+    else if (currentSecurityState == SECURITY_ALARM_ACTIVE) {
+        Serial.println("[SECURITY] Alarm active - Door remains LOCKED");
+        publishMQTTStatus("Motion ended - Door locked");
+    }
 }
 
 void onFamilyMemberDetected() {
-    Serial.println("[SECURITY] Family member detected - Resetting security state");
+    Serial.println("\n[SECURITY] Family member detected - Disarming");
     
     familyMemberDetected = true;
+    
+    if (isAudioPlaying()) {
+        stopAudio();
+    }
+    
+    sendNodeCommand("buzzer", "off");
+    sendNodeCommand("lock", "unlock");
+    
     resetSecurityState();
-    publishMQTTStatus("Family member confirmed - Security reset");
+    
+    publishMQTTStatus("Family confirmed - system disarmed");
 }
 
 void resetSecurityState() {
+    Serial.println("[SECURITY] Reset to IDLE");
+    
     currentSecurityState = SECURITY_IDLE;
     motionDetectedTime = 0;
+    lastMotionSeenTime = 0;
     ownerSmsAlreadySent = false;
     neighborSmsAlreadySent = false;
     familyMemberDetected = false;
     
-    publishMQTTStatus("Security state reset to IDLE");
+    publishMQTTStatus("IDLE");
 }
 
-void checkSecurityTimers() {
-    if (currentSecurityState == SECURITY_IDLE) {
+void checkSecurityTimers() 
+{
+    if (currentSecurityState == SECURITY_IDLE || familyMemberDetected) 
+    {
         return;
     }
     
     unsigned long currentTime = millis();
     unsigned long elapsedTime = currentTime - motionDetectedTime;
+    unsigned long timeSinceLastMotion = currentTime - lastMotionSeenTime;
     
-    if (familyMemberDetected) {
+    // ✅ Auto reset nếu không motion > 20s (chỉ còn backup, vì đã tắt ở onMotionEnded)
+    if (timeSinceLastMotion >= AUTO_RESET_NO_MOTION) {
+        Serial.println("\n[SECURITY] No motion > 20s - Auto reset");
+        
+        sendNodeCommand("buzzer", "off");
         resetSecurityState();
         return;
     }
     
-    switch (currentSecurityState) {
+    switch (currentSecurityState) 
+    {
         case SECURITY_WAITING_OWNER_SMS:
-            if (elapsedTime >= OWNER_SMS_DELAY && !ownerSmsAlreadySent) {
-                if (sendSMS(PHONE_NUMBER_OWNER, "CANH BAO: Phat hien chuyen dong tai nha ban! Vui long kiem tra camera.")) {
-                    Serial.println("[SECURITY] SMS sent to owner");
-                    ownerSmsAlreadySent = true;
-                } else {
-                    Serial.println("[SECURITY] Failed to send SMS to owner");
-                }
+            if (elapsedTime >= OWNER_SMS_BUZZER_DELAY && !ownerSmsAlreadySent) 
+            {
+                Serial.println("\n[SECURITY] 20s - Owner SMS + Buzzer ON");
+                
+                sendSMSAsync(PHONE_NUMBER_OWNER, "CANH BAO: Phat hien chuyen dong tai nha ban!");
+                ownerSmsAlreadySent = true;
+                
+                sendNodeCommand("buzzer", "on");
                 
                 currentSecurityState = SECURITY_WAITING_NEIGHBOR_SMS;
                 publishMQTTStatus("Owner SMS sent");
@@ -283,27 +420,19 @@ void checkSecurityTimers() {
             break;
             
         case SECURITY_WAITING_NEIGHBOR_SMS:
-            if (elapsedTime >= NEIGHBOR_SMS_DELAY && !neighborSmsAlreadySent) {
-                if (sendSMS(PHONE_NUMBER_NEIGHBOR, "CANH BAO KHAN CAP: Co the co ke dot nhap tai nha hang xom! Vui long kiem tra giup.")) {
-                    Serial.println("[SECURITY] SMS sent to neighbor");
-                    neighborSmsAlreadySent = true;
-                } else {
-                    Serial.println("[SECURITY] Failed to send SMS to neighbor");
-                }
+            if (elapsedTime >= NEIGHBOR_SMS_LOCK_DELAY && !neighborSmsAlreadySent) {
+                Serial.println("\n[SECURITY] 40s - Neighbor SMS + Door LOCK");
                 
-                digitalWrite(LED_PIN, HIGH);
+                sendSMSAsync(PHONE_NUMBER_NEIGHBOR, "CANH BAO KHAN CAP: Dot nhap!");
+                neighborSmsAlreadySent = true;
+                
+                sendNodeCommand("lock", "lock");
+                
                 currentSecurityState = SECURITY_ALARM_ACTIVE;
-                publishMQTTStatus("Full alarm activated");
+                publishMQTTStatus("Neighbor SMS sent");
             }
             break;
-            
-        case SECURITY_ALARM_ACTIVE:
-            if (elapsedTime >= 300000) {
-                Serial.println("[SECURITY] Auto-reset after 5 minutes");
-                resetSecurityState();
-            }
-            break;
-            
+                    
         default:
             break;
     }

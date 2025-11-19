@@ -10,6 +10,8 @@ void handleServoLoop();
 void updateServoPositions();
 void moveServoToCenter();
 
-void checkNetworkStatus();
+void reconnectBlynk();
+bool isBlynkConnected();
+void handleEmergencyUnlock();
 
 #endif

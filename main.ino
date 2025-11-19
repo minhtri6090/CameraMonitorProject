@@ -19,13 +19,15 @@ bool needPlaySuccessAudio = false;
 unsigned long wifiStartTime = 0;
 const unsigned long WIFI_TIMEOUT = 30000;
 
-void setup() {
+void setup() 
+{
     Serial.begin(115200);
-    delay(1000);
+    vTaskDelay(pdMS_TO_TICKS(1000));
     
-    if (!psramFound()) {
+    if (!psramFound()) 
+    {
         Serial.println("ERROR: PSRAM NOT FOUND!");
-        while(1) delay(1000);
+        while(1) vTaskDelay(pdMS_TO_TICKS(1000));
     }
 
     EEPROM.begin(512);
@@ -34,19 +36,20 @@ void setup() {
     initializeCamera();
 }
 
-void loop() {
-    handleAudioLoop();
-
-    if (!sdAudioInitialized) {
+void loop() 
+{
+    if (!sdAudioInitialized) 
+    {
         initializeSDCard();
         initializeAudio();
-        delay(500);
+        vTaskDelay(pdMS_TO_TICKS(500));
         playAudio(AUDIO_HELLO);
         
         sdAudioInitialized = true;
         welcomeAudioPlayed = true;
         return;
     }
+    handleAudioLoop();
 
     if (welcomeAudioPlayed && !wifiConnectionStarted && !isAudioPlaying()) {
         initializeWiFi();
@@ -60,11 +63,11 @@ void loop() {
 
         if (wifiState == WIFI_STA_OK && !isAudioPlaying()) {
             playAudio(AUDIO_WIFI_SUCCESS);
-            delay(100);
+            vTaskDelay(pdMS_TO_TICKS(100));
             while (isAudioPlaying()) { 
                 handleAudioLoop(); 
                 yield(); 
-                delay(50); 
+                vTaskDelay(pdMS_TO_TICKS(50));
             }
             
             wifiResultProcessed = true;
@@ -78,13 +81,13 @@ void loop() {
 
         if ((millis() - wifiStartTime > WIFI_TIMEOUT) && wifiState != WIFI_STA_OK && !isAudioPlaying()) {
             playAudio(AUDIO_WIFI_FAILED);
-            delay(100);
+            vTaskDelay(pdMS_TO_TICKS(100));
             while (isAudioPlaying()) { 
                 handleAudioLoop(); 
                 yield(); 
-                delay(50); 
+                vTaskDelay(pdMS_TO_TICKS(100));
             }
-            delay(2000);
+            vTaskDelay(pdMS_TO_TICKS(1000));
             
             wifiResultProcessed = true;
             return;
@@ -109,11 +112,11 @@ void loop() {
 
     if (needPlaySuccessAudio && wifiState == WIFI_STA_OK && !isAudioPlaying()) {
         playAudio(AUDIO_WIFI_SUCCESS);
-        delay(100);
+        vTaskDelay(pdMS_TO_TICKS(100));
         while (isAudioPlaying()) { 
             handleAudioLoop(); 
             yield(); 
-            delay(50); 
+            vTaskDelay(pdMS_TO_TICKS(100));
         }
         needPlaySuccessAudio = false;
 
@@ -144,5 +147,5 @@ void loop() {
         }
     }
     
-    delay(10);
+    vTaskDelay(pdMS_TO_TICKS(10));
 }

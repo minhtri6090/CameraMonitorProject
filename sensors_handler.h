@@ -4,7 +4,6 @@
 #include "config.h"
 
 extern bool systemReady;
-extern bool motionDetected;
 extern unsigned long lastMotionTime;
 extern const unsigned long motionCooldown;
 extern int radarState;
@@ -14,15 +13,19 @@ extern bool motionInProgress;
 
 extern int ldrValue;
 extern bool isDark;
-extern bool ledState;
+extern bool irLedState;
+extern bool flashLedState;
 extern unsigned long lastLDRRead;
 
 void initializeSensors(); 
 void handleMotionLoop();
 void handleLDRLoop();
 void readLDRSensor();
-void controlLED(bool turnOn);
 
-void IRAM_ATTR radarISR();
+void controlIRLED(bool turnOn);
+void controlFlashLED(bool turnOn);
+void updateLEDsBasedOnConditions();
+
+void resetMotionCooldown();
 
 #endif

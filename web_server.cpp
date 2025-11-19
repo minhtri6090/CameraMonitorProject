@@ -12,7 +12,10 @@ TaskHandle_t streamTaskHandle[MAX_CLIENTS] = {NULL, NULL, NULL};
 
 void stream_task(void *pvParameters) {
     stream_client_t* streamClient = (stream_client_t*)pvParameters;
-    WiFiClient client = streamClient->client;
+    
+    // ✅ DÙNG REFERENCE THAY VÌ COPY
+    WiFiClient& client = streamClient->client;  // ← Thêm dấu "&"
+    
     Serial.printf("[TASK] Streaming client %s\n", client.remoteIP().toString().c_str());
 
     unsigned long lastFrameTime = 0;
@@ -49,13 +52,15 @@ void stream_task(void *pvParameters) {
         }
 
         if (!client.connected()) break;
-        vTaskDelay(pdMS_TO_TICKS(10));
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 
+    // ✅ CLEANUP AN TOÀN HƠN
     Serial.printf("[TASK] Client %s disconnected, cleaning up\n", client.remoteIP().toString().c_str());
     client.stop();
-    delete streamClient;
-
+    
+    // ✅ DÙNG CRITICAL SECTION KHI CẬP NHẬT ARRAY
+    portENTER_CRITICAL(&frameMux);
     TaskHandle_t current = xTaskGetCurrentTaskHandle();
     for (int i = 0; i < MAX_CLIENTS; i++) {
         if (streamTaskHandle[i] == current) {
@@ -63,6 +68,9 @@ void stream_task(void *pvParameters) {
             break;
         }
     }
+    portEXIT_CRITICAL(&frameMux);
+    
+    delete streamClient;
     vTaskDelete(NULL);
 }
 
@@ -774,7 +782,7 @@ void handleScanResults() {
     }
     
     WiFi.mode(WIFI_AP_STA);
-    delay(200);
+    vTaskDelay(pdMS_TO_TICKS(200));
     int n = WiFi.scanNetworks(false, true, false, 300);
     
     String html = R"=====(
@@ -969,10 +977,6 @@ void handleNotFound() {
     server.send(404, "text/plain", "Not Found");
 }
 
-void initWebServer() {
-    server.onNotFound(handleNotFound);
-}
-
 void stopWebServer() {
     if (serverRunning) {
         server.stop();
@@ -982,7 +986,7 @@ void stopWebServer() {
 
 void restartWebServer() {
     stopWebServer();
-    delay(1000);
+    vTaskDelay(pdMS_TO_TICKS(1000));
     
     if (WiFi.getMode() == WIFI_AP || WiFi.getMode() == WIFI_AP_STA) {
         startAPWebServer();

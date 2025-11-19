@@ -1,9 +1,9 @@
 #include "sensors_handler.h"
 #include "audio_handler.h"
 #include "security_system.h"
+#include "driver/gpio.h"
 
 bool systemReady = false;
-bool motionDetected = false;
 unsigned long lastMotionTime = 0;
 const unsigned long motionCooldown = 5000;
 
@@ -12,89 +12,168 @@ int radarVal = 0;
 unsigned long motionStartTime = 0;
 bool motionInProgress = false;
 
+// ✅ LDR & LED State
 int ldrValue = 0;
 bool isDark = false;
-bool ledState = false;
+bool irLedState = false;
+bool flashLedState = false;
 unsigned long lastLDRRead = 0;
 
-void IRAM_ATTR radarISR() {
-    if (systemReady && (millis() - lastMotionTime > motionCooldown)) {
-        motionDetected = true;
-    }
-}
+// ✅ Debounce cho motion update
+unsigned long lastMotionUpdateTime = 0;
+const unsigned long motionUpdateInterval = 500;
 
-void initializeSensors() {
+void initializeSensors() 
+{
     pinMode(PIR_PIN, INPUT);
-    detachInterrupt(digitalPinToInterrupt(PIR_PIN));
-
-    pinMode(LDR_PIN, INPUT);
+    
+    pinMode(FLASH_LED_PIN, OUTPUT);
+    digitalWrite(FLASH_LED_PIN, LOW);
+    flashLedState = false;
+    
     pinMode(LED_PIN, OUTPUT);
     digitalWrite(LED_PIN, LOW);
-
+    irLedState = false;
+    
+    pinMode(LDR_PIN, INPUT);
     readLDRSensor();
-
+    
     radarVal = digitalRead(PIR_PIN);
     radarState = LOW;
-    motionDetected = false;
     motionInProgress = false;
-    lastMotionTime = millis();
+    lastMotionTime = 0;
+    lastMotionUpdateTime = 0;
     
-    if (radarVal == LOW) {
-        attachInterrupt(digitalPinToInterrupt(PIR_PIN), radarISR, RISING);
-    }
+    Serial.println("[PIR] Initialized (polling mode)");
+    
+    updateLEDsBasedOnConditions();
 }
 
 void readLDRSensor() {
     ldrValue = analogRead(LDR_PIN);
 
-    Serial.printf("ADC: %d\n", ldrValue);
-    if (!isDark && (ldrValue < LDR_DARK_THRESHOLD)) {
-        isDark = true;
-        digitalWrite(LED_PIN, HIGH);
-        Serial.println("Led sang");
-    } else if (isDark && ldrValue > LDR_BRIGHT_THRESHOLD) {
-        isDark = false;
-        digitalWrite(LED_PIN, LOW);
-        Serial.println("Led tat");
-    }
-}
-
-void controlLED(bool turnOn) {
+    bool wasDark = isDark;
+    isDark = (ldrValue < LDR_DARK_THRESHOLD);
     
-    if (turnOn != ledState) {
-        ledState = turnOn;
-        digitalWrite(LED_PIN, ledState ? HIGH : LOW);
+    if (wasDark != isDark) 
+    {
+        Serial.printf("[LDR] Light changed: %s (value=%d)\n", isDark ? "DARK" : "BRIGHT", ldrValue);
+        updateLEDsBasedOnConditions();
     }
 }
 
-void handleLDRLoop() {
-    if (systemReady && (millis() - lastLDRRead >= LDR_READ_INTERVAL)) {
+void controlIRLED(bool turnOn) 
+{
+    if (turnOn != irLedState) 
+    {
+        irLedState = turnOn;
+        digitalWrite(LED_PIN, turnOn ? HIGH : LOW);
+        Serial.printf("[IR_LED] %s\n", turnOn ? "ON" : "OFF");
+    }
+}
+
+void controlFlashLED(bool turnOn) 
+{
+    if (turnOn != flashLedState) 
+    {
+        flashLedState = turnOn;
+        digitalWrite(FLASH_LED_PIN, turnOn ? HIGH : LOW);
+        Serial.printf("[FLASH_LED] %s\n", turnOn ? "ON" : "OFF");
+    }
+}
+
+void updateLEDsBasedOnConditions() {
+    if (isDark) 
+    {
+        if (motionInProgress) 
+        {
+            controlIRLED(false);
+            controlFlashLED(true);
+        } 
+        else 
+        {
+            controlIRLED(true);
+            controlFlashLED(false);
+        }
+    } 
+    else 
+    {
+        controlIRLED(false);
+        controlFlashLED(false);
+    }
+}
+
+void handleLDRLoop() 
+{
+    if (systemReady && (millis() - lastLDRRead >= LDR_READ_INTERVAL)) 
+    {
         lastLDRRead = millis();
         readLDRSensor();
     }
 }
 
-void handleMotionLoop() {
-    if (systemReady) {
-        radarVal = digitalRead(PIR_PIN);
-        
-        if (radarVal == HIGH) {
-            if (radarState == LOW) {
-                if (millis() - lastMotionTime > motionCooldown) {
-                    Serial.println("[MOTION] Motion detected");
-                    lastMotionTime = millis();
-                    motionStartTime = millis();
-                    radarState = HIGH;
-                    motionInProgress = true;
+void resetMotionCooldown() 
+{
+    lastMotionTime = 0;
+    Serial.println("[MOTION] Cooldown reset");
+}
 
-                    onMotionDetected();
-                }
-            }
-        } else {
-            if (radarState == HIGH) {
-                radarState = LOW;
-                motionInProgress = false;
+void handleMotionLoop() 
+{
+    if (!systemReady) return;
+    
+    radarVal = digitalRead(PIR_PIN);
+    unsigned long currentTime = millis();
+    
+    // ✅ Motion START
+    if (radarVal == HIGH && radarState == LOW) 
+    {
+        if (currentTime - lastMotionTime > motionCooldown) 
+        {
+            Serial.println("\n[MOTION] Motion started");
+            
+            lastMotionTime = currentTime;
+            motionStartTime = currentTime;
+            radarState = HIGH;
+            motionInProgress = true;
+            lastMotionUpdateTime = currentTime;
+            
+            updateLEDsBasedOnConditions();
+            
+            // ✅ Trigger security system (chỉ lần đầu)
+            onMotionDetected();
+            
+        } 
+        else 
+        {
+            radarState = HIGH;
+        }
+    }
+    // ✅ Motion CONTINUE (throttle update)
+    else if (radarVal == HIGH && radarState == HIGH) 
+    {
+        // ✅ Chỉ cập nhật mỗi 500ms
+        if (currentTime - lastMotionUpdateTime >= motionUpdateInterval) 
+        {
+            lastMotionUpdateTime = currentTime;
+            
+            extern SecurityState currentSecurityState;
+            if (currentSecurityState != SECURITY_IDLE) 
+            {
+                updateMotionTimestamp();
             }
         }
+    }
+    // ✅ Motion END → TẮT BUZZER NGAY LẬP TỨC
+    else if (radarVal == LOW && radarState == HIGH) 
+    {
+        Serial.println("\n[MOTION] Motion ended");
+        radarState = LOW;
+        motionInProgress = false;
+        
+        updateLEDsBasedOnConditions();
+        
+        // ✅ GỌI HÀM TẮT BUZZER KHI MOTION END
+        onMotionEnded();
     }
 }

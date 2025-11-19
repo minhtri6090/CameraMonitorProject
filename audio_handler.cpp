@@ -41,23 +41,44 @@ void initializeAudio() {
     }
 }
 
-void playAudio(int audioIndex) {
-    if (!audioInitialized || !audio) {
+void playAudio(int audioIndex) 
+{
+    if (!audioInitialized || !audio) 
+    {
+        Serial.println("[AUDIO] Not initialized");
         return;
     }
     
-    if (audioIndex < 0 || audioIndex >= AUDIO_FILES_COUNT) { 
+    if (audioIndex < 0 || audioIndex >= AUDIO_FILES_COUNT) 
+    {
+        Serial.printf("[AUDIO] Invalid index: %d\n", audioIndex);
         return;
     }
     
-    if (audio->isRunning()) {
+    if (audio->isRunning()) 
+    {
+        Serial.println("[AUDIO] Stopping current audio");
         audio->stopSong();
-        delay(100);
+        vTaskDelay(pdMS_TO_TICKS(50));
     }
 
     String filePath = audioFiles[audioIndex];
-    if (SD.exists(filePath)) {
+    
+    if (SD.exists(filePath)) 
+    {
+        Serial.printf("[AUDIO] Playing: %s\n", filePath.c_str());
         audio->connecttoFS(SD, filePath.c_str());
+    } 
+    else 
+    {
+        Serial.printf("[AUDIO] File not found: %s\n", filePath.c_str());
+    }
+}
+
+void stopAudio() {
+    if (audioInitialized && audio && audio->isRunning()) {
+        Serial.println("[AUDIO] Stopped");
+        audio->stopSong();
     }
 }
 
@@ -69,10 +90,4 @@ void handleAudioLoop() {
 
 bool isAudioPlaying() {
     return (audioInitialized && audio && audio->isRunning());
-}
-
-void stopAudio() {
-    if (audioInitialized && audio && audio->isRunning()) {
-        audio->stopSong();
-    }
 }

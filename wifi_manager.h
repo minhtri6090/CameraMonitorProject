@@ -10,9 +10,6 @@ extern const int AP_CHANNEL;
 extern const int AP_MAX_CONN;
 extern const bool AP_HIDDEN;
 
-extern const char* DEFAULT_SSID;
-extern const char* DEFAULT_PASSWORD;
-
 extern WiFiState wifiState;
 extern String savedSSID;
 extern String savedPassword;
@@ -21,7 +18,6 @@ extern String connectingSSID;
 extern String connectingPassword;
 extern unsigned long connectStartTime;
 extern const unsigned long connectTimeout;
-extern bool needRestartStream;
 
 void loadCredentials();
 void saveCredentials(String ssid, String password);
@@ -31,5 +27,7 @@ void connectWiFiSTA(String ssid, String password);
 void startAPConfigPortal();
 void initializeWiFi();
 void handleWiFiLoop();
+
+void initializeMDNS();
 
 #endif
